@@ -33,7 +33,57 @@ def find_threshold_clustering(image, max_iters=100, tol=0.5):
     return int(round(T))
 
 
-image_path = "Orings/oring2.jpg"
+def dilate(binary_img, se):
+    h, w = binary_img.shape
+    sh, sw = se.shape
+    ph, pw = sh // 2, sw // 2
+
+    padded = np.pad(
+        binary_img,
+        ((ph, ph), (pw, pw)),
+        mode="constant",
+        constant_values=0,
+    )
+    out = np.zeros_like(binary_img, dtype=np.uint8)
+
+    for i in range(h):
+        for j in range(w):
+            region = padded[i : i + sh, j : j + sw]
+            if np.any((region == 255) & (se == 1)):
+                out[i, j] = 255
+    return out
+
+
+def erode(binary_img, se):
+    h, w = binary_img.shape
+    sh, sw = se.shape
+    ph, pw = sh // 2, sw // 2
+
+    padded = np.pad(
+        binary_img,
+        ((ph, ph), (pw, pw)),
+        mode="constant",
+        constant_values=0,
+    )
+    out = np.zeros_like(binary_img, dtype=np.uint8)
+
+    for i in range(h):
+        for j in range(w):
+            region = padded[i : i + sh, j : j + sw]
+            if np.all(region[se == 1] == 255):
+                out[i, j] = 255
+    return out
+
+
+def close(binary_img, se, iterations=1):
+    result = binary_img.copy()
+    for _ in range(iterations):
+        result = dilate(result, se)
+        result = erode(result, se)
+    return result
+
+
+image_path = "Orings/oring1.jpg"
 
 img_color = cv.imread(image_path, cv.IMREAD_COLOR)
 if img_color is None:
@@ -63,7 +113,14 @@ T = find_threshold_clustering(img)
 print("Chosen threshold (clustering):", T)
 
 binary = np.zeros_like(img, dtype=np.uint8)
-binary[img > T] = 255
+count_above = np.count_nonzero(img > T)
+count_below = np.count_nonzero(img <= T)
+if count_above < count_below:
+    binary[img > T] = 255
+else:
+    binary[img <= T] = 255
+se = np.ones((3, 3), dtype=np.uint8)
+closed = close(binary, se)
 
 x = 100
 y = 100
@@ -71,7 +128,7 @@ if 0 <= x < img.shape[0] and 0 <= y < img.shape[1]:
     pix = img[x, y]
     print("The pixel value at image location [" + str(x) + "," + str(y) + "] is:" + str(pix))
 
-cv.imshow(f"Grayscale O-ring - {image_path}", img)
-cv.imshow(f"Binary O-ring - T={T}", binary)
+cv.imshow("Binary O-ring", binary)
+cv.imshow("Closed binary O-ring", closed)
 cv.waitKey(0)
 cv.destroyAllWindows()
