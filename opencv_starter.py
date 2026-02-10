@@ -1,35 +1,23 @@
 import cv2 as cv
 import numpy as np
-import time
 
-#read in an image into memory
-img = cv.imread('cameraman.png', 0)
-copy = img.copy()
-#check out some of its pixel values...img[x,y]..try different x and y values
+image_path = "Orings/oring1.jpg"
+
+img_color = cv.imread(image_path, cv.IMREAD_COLOR)
+if img_color is None:
+    raise FileNotFoundError(f"Could not load image: {image_path}")
+
+b = img_color[..., 0].astype(np.float32)
+g = img_color[..., 1].astype(np.float32)
+r = img_color[..., 2].astype(np.float32)
+img = (0.114 * b + 0.587 * g + 0.299 * r).astype(np.uint8)
+
 x = 100
 y = 100
-pix = img[x,y]
-print("The pixel value at image location [" + str(x) + "," + str(y) + "] is:" + str(pix))
+if 0 <= x < img.shape[0] and 0 <= y < img.shape[1]:
+    pix = img[x, y]
+    print("The pixel value at image location [" + str(x) + "," + str(y) + "] is:" + str(pix))
 
-#implement thresholding ourselves using loops (soooo slow in python)
-before = time.time()
-thresh = 100
-for x in range(0, img.shape[0]):
-    for y in range(0, img.shape[1]):
-        if img[x,y] > thresh:
-            img[x,y] = 255
-        else:
-            img[x,y] = 0
-after = time.time()
-print("Time taken to process hand coded thresholding: " + str(after-before))
-cv.imshow('thresholded image 1',img)
-cv.waitKey(0)
-
-#now lets use the opencv built in function to threshold the image
-before = time.time()
-ret,copy = cv.threshold(copy,100,255,cv.THRESH_BINARY)
-after = time.time()
-print("Time taken to process opencv built in thresholding: " + str(after-before))
-cv.imshow('thresholded image 2',copy)
+cv.imshow("thresholded image 1", img)
 cv.waitKey(0)
 cv.destroyAllWindows()
