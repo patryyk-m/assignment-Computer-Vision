@@ -33,7 +33,7 @@ def find_threshold_clustering(image, max_iters=100, tol=0.5):
     return int(round(T))
 
 
-image_path = "Orings/oring1.jpg"
+image_path = "Orings/oring2.jpg"
 
 img_color = cv.imread(image_path, cv.IMREAD_COLOR)
 if img_color is None:
@@ -62,6 +62,9 @@ print(
 T = find_threshold_clustering(img)
 print("Chosen threshold (clustering):", T)
 
+binary = np.zeros_like(img, dtype=np.uint8)
+binary[img > T] = 255
+
 x = 100
 y = 100
 if 0 <= x < img.shape[0] and 0 <= y < img.shape[1]:
@@ -69,5 +72,6 @@ if 0 <= x < img.shape[0] and 0 <= y < img.shape[1]:
     print("The pixel value at image location [" + str(x) + "," + str(y) + "] is:" + str(pix))
 
 cv.imshow(f"Grayscale O-ring - {image_path}", img)
+cv.imshow(f"Binary O-ring - T={T}", binary)
 cv.waitKey(0)
 cv.destroyAllWindows()
