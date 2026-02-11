@@ -1,5 +1,6 @@
 import cv2 as cv
 import numpy as np
+from collections import deque
 
 
 def compute_histogram(image):
@@ -83,6 +84,41 @@ def close(binary_img, se, iterations=1):
     return result
 
 
+def connected_components(binary_img):
+    h, w = binary_img.shape
+    labels = np.zeros((h, w), dtype=np.int32)
+    areas = {}
+    current_label = 0
+
+    neighbors = [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)]
+
+    for y in range(h):
+        for x in range(w):
+            if binary_img[y, x] == 255 and labels[y, x] == 0:
+                current_label += 1
+                labels[y, x] = current_label
+                area = 1
+
+                queue = deque([(y, x)])
+                while queue:
+                    cy, cx = queue.popleft()
+                    for dy, dx in neighbors:
+                        ny, nx = cy + dy, cx + dx
+                        if (
+                            0 <= ny < h
+                            and 0 <= nx < w
+                            and binary_img[ny, nx] == 255
+                            and labels[ny, nx] == 0
+                        ):
+                            labels[ny, nx] = current_label
+                            area += 1
+                            queue.append((ny, nx))
+
+                areas[current_label] = area
+
+    return labels, areas
+
+
 image_path = "Orings/oring1.jpg"
 
 img_color = cv.imread(image_path, cv.IMREAD_COLOR)
@@ -122,13 +158,28 @@ else:
 se = np.ones((3, 3), dtype=np.uint8)
 closed = close(binary, se)
 
+labels, areas = connected_components(closed)
+if areas:
+    largest_label = max(areas, key=areas.get)
+    print(f"Largest component: label {largest_label}, area {areas[largest_label]}")
+
+    largest_mask = np.zeros_like(closed, dtype=np.uint8)
+    largest_mask[labels == largest_label] = 255
+else:
+    largest_mask = np.zeros_like(closed, dtype=np.uint8)
+    print("No components found")
+
+print("Number of components:", len(areas))
+print("White pixels in closed:", int(np.count_nonzero(closed == 255)))
+print("White pixels in largest_mask:", int(np.count_nonzero(largest_mask == 255)))
+
 x = 100
 y = 100
 if 0 <= x < img.shape[0] and 0 <= y < img.shape[1]:
     pix = img[x, y]
     print("The pixel value at image location [" + str(x) + "," + str(y) + "] is:" + str(pix))
 
-cv.imshow("Binary O-ring", binary)
 cv.imshow("Closed binary O-ring", closed)
+cv.imshow("Largest component mask", largest_mask)
 cv.waitKey(0)
 cv.destroyAllWindows()
