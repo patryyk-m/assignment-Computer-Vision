@@ -119,6 +119,46 @@ def connected_components(binary_img):
     return labels, areas
 
 
+def compute_region_properties(mask):
+    ys, xs = np.where(mask == 255)
+    
+    if len(ys) == 0:
+        return {
+            "area": 0,
+            "bbox": (0, 0, 0, 0),
+            "centroid": (0, 0),
+            "perimeter": 0,
+        }
+    
+    area = len(ys)
+    min_y, max_y = int(ys.min()), int(ys.max())
+    min_x, max_x = int(xs.min()), int(xs.max())
+    bbox = (min_x, min_y, max_x, max_y)
+    
+    centroid = (float(xs.mean()), float(ys.mean()))
+    
+    h, w = mask.shape
+    neighbors = [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)]
+    perimeter = 0
+    
+    for y, x in zip(ys, xs):
+        is_boundary = False
+        for dy, dx in neighbors:
+            ny, nx = y + dy, x + dx
+            if ny < 0 or ny >= h or nx < 0 or nx >= w or mask[ny, nx] == 0:
+                is_boundary = True
+                break
+        if is_boundary:
+            perimeter += 1
+    
+    return {
+        "area": area,
+        "bbox": bbox,
+        "centroid": centroid,
+        "perimeter": perimeter,
+    }
+
+
 image_path = "Orings/oring1.jpg"
 
 img_color = cv.imread(image_path, cv.IMREAD_COLOR)
@@ -173,13 +213,27 @@ print("Number of components:", len(areas))
 print("White pixels in closed:", int(np.count_nonzero(closed == 255)))
 print("White pixels in largest_mask:", int(np.count_nonzero(largest_mask == 255)))
 
+props = compute_region_properties(largest_mask)
+print("Region properties:", props)
+
+annotated = img_color.copy()
+min_x, min_y, max_x, max_y = props["bbox"]
+cv.rectangle(annotated, (min_x, min_y), (max_x, max_y), (0, 255, 0), 2)
+
+cx, cy = props["centroid"]
+cv.circle(annotated, (int(cx), int(cy)), 5, (255, 0, 0), -1)
+
+text_area = f"Area: {props['area']}"
+text_perim = f"Perimeter: {props['perimeter']}"
+cv.putText(annotated, text_area, (10, 30), cv.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+cv.putText(annotated, text_perim, (10, 60), cv.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+
 x = 100
 y = 100
 if 0 <= x < img.shape[0] and 0 <= y < img.shape[1]:
     pix = img[x, y]
     print("The pixel value at image location [" + str(x) + "," + str(y) + "] is:" + str(pix))
 
-cv.imshow("Closed binary O-ring", closed)
-cv.imshow("Largest component mask", largest_mask)
+cv.imshow("Annotated O-ring", annotated)
 cv.waitKey(0)
 cv.destroyAllWindows()
