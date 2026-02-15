@@ -2,6 +2,11 @@ import cv2 as cv
 import numpy as np
 from collections import deque
 
+STD_THRESH = 8.0
+HOLE_RATIO_THRESH = 0.15
+BBOX_PAD = 5
+BAND_MARGIN_FRAC = 0.15
+
 
 def compute_histogram(image):
     hist = np.zeros(256, dtype=np.int64)
@@ -159,7 +164,51 @@ def compute_region_properties(mask):
     }
 
 
-image_path = "Orings/oring1.jpg"
+def classify_oring(largest_mask, props):
+    min_x, min_y, max_x, max_y = props["bbox"]
+    cx, cy = props["centroid"]
+    h, w = largest_mask.shape
+
+    y0 = max(0, min_y - BBOX_PAD)
+    y1 = min(h, max_y + BBOX_PAD + 1)
+    x0 = max(0, min_x - BBOX_PAD)
+    x1 = min(w, max_x + BBOX_PAD + 1)
+    mask_crop = largest_mask[y0:y1, x0:x1]
+
+    crop_h, crop_w = mask_crop.shape
+    cx_crop = cx - x0
+    cy_crop = cy - y0
+
+    ys, xs = np.where(mask_crop == 255)
+    if len(ys) == 0:
+        return 0.0, 0.0, 0.0, "FAIL"
+
+    r = np.sqrt((xs - cx_crop) ** 2 + (ys - cy_crop) ** 2)
+    r_min = float(r.min())
+    r_max = float(r.max())
+    thickness = r_max - r_min
+    std_r = float(r.std())
+
+    margin = BAND_MARGIN_FRAC * thickness
+    rr = np.arange(crop_h, dtype=np.float32)
+    cc = np.arange(crop_w, dtype=np.float32)
+    yy, xx = np.meshgrid(rr, cc, indexing="ij")
+    r_map = np.sqrt((xx - cx_crop) ** 2 + (yy - cy_crop) ** 2)
+    band_mask = (r_map >= r_min + margin) & (r_map <= r_max - margin)
+    band_count = int(band_mask.sum())
+    if band_count == 0:
+        band_background_ratio = 0.0
+    else:
+        band_bg = (mask_crop == 0) & band_mask
+        band_background_ratio = float(band_bg.sum()) / band_count
+
+    fail = std_r > STD_THRESH or band_background_ratio > HOLE_RATIO_THRESH
+    label = "FAIL" if fail else "PASS"
+
+    return thickness, std_r, band_background_ratio, label
+
+
+image_path = "Orings/oring15.jpg"
 
 img_color = cv.imread(image_path, cv.IMREAD_COLOR)
 if img_color is None:
@@ -227,6 +276,17 @@ text_area = f"Area: {props['area']}"
 text_perim = f"Perimeter: {props['perimeter']}"
 cv.putText(annotated, text_area, (10, 30), cv.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
 cv.putText(annotated, text_perim, (10, 60), cv.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+
+thickness, std_r, band_background_ratio, result_label = classify_oring(largest_mask, props)
+print("thickness:", thickness)
+print("std_r:", std_r)
+print("band_background_ratio:", band_background_ratio)
+print("Result:", result_label)
+
+cv.putText(
+    annotated, result_label, (10, annotated.shape[0] - 20),
+    cv.FONT_HERSHEY_SIMPLEX, 1.5, (0, 255, 0) if result_label == "PASS" else (0, 0, 255), 3,
+)
 
 x = 100
 y = 100
