@@ -7,7 +7,7 @@ import numpy as np
 from collections import deque
 
 STD_THRESH = 8.0
-HOLE_RATIO_THRESH = 0.15
+HOLE_RATIO_THRESH = 0.065
 BBOX_PAD = 5
 BAND_MARGIN_FRAC = 0.15
 
@@ -264,6 +264,7 @@ def process_image(image_path):
         thickness, std_r, band_background_ratio, result_label = classify_oring(largest_mask, props)
     else:
         result_label = "FAIL"
+        std_r, band_background_ratio = 0.0, 0.0
         cv.putText(annotated, "NO RING FOUND", (10, 30), cv.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 255), 2)
 
     t1 = time.perf_counter()
@@ -278,7 +279,7 @@ def process_image(image_path):
         cv.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2,
     )
 
-    return annotated, largest_mask, result_label, time_ms
+    return annotated, largest_mask, result_label, time_ms, std_r, band_background_ratio
 
 
 def main():
@@ -308,8 +309,8 @@ def main():
 
     for img_path in image_paths:
         try:
-            annotated, largest_mask, result_label, time_ms = process_image(img_path)
-            print(f"{img_path.name}: {result_label} ({time_ms:.1f} ms)")
+            annotated, largest_mask, result_label, time_ms, std_r, band_ratio = process_image(img_path)
+            print(f"{img_path.name}: {result_label}  ({time_ms:.1f} ms)  std_r={std_r:.2f}  band_ratio={band_ratio:.3f}")
 
             if args.save:
                 stem = img_path.stem
