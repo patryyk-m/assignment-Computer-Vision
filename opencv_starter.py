@@ -1,3 +1,7 @@
+import argparse
+import time
+from pathlib import Path
+
 import cv2 as cv
 import numpy as np
 from collections import deque
@@ -208,92 +212,120 @@ def classify_oring(largest_mask, props):
     return thickness, std_r, band_background_ratio, label
 
 
-image_path = "Orings/oring15.jpg"
+def process_image(image_path):
+    t0 = time.perf_counter()
 
-img_color = cv.imread(image_path, cv.IMREAD_COLOR)
-if img_color is None:
-    raise FileNotFoundError(f"Could not load image: {image_path}")
-print("Loaded image:", image_path)
+    img_color = cv.imread(str(image_path), cv.IMREAD_COLOR)
+    if img_color is None:
+        raise FileNotFoundError(f"Could not load image: {image_path}")
 
-b = img_color[..., 0].astype(np.float32)
-g = img_color[..., 1].astype(np.float32)
-r = img_color[..., 2].astype(np.float32)
-img = (0.114 * b + 0.587 * g + 0.299 * r).astype(np.uint8)
+    b = img_color[..., 0].astype(np.float32)
+    g = img_color[..., 1].astype(np.float32)
+    r = img_color[..., 2].astype(np.float32)
+    img = (0.114 * b + 0.587 * g + 0.299 * r).astype(np.uint8)
 
-hist = compute_histogram(img)
-print("Total pixels:", img.size)
-peak = int(np.argmax(hist))
-print("Peak intensity:", peak, "count:", int(hist[peak]))
-nonzero_bins = np.count_nonzero(hist)
-print("Non-zero bins:", int(nonzero_bins))
-nonzero_indices = np.where(hist > 0)[0]
-print(
-    "Intensity range:",
-    int(nonzero_indices.min()),
-    "to",
-    int(nonzero_indices.max()),
-)
+    hist = compute_histogram(img)
+    T = find_threshold_clustering(img)
 
-T = find_threshold_clustering(img)
-print("Chosen threshold (clustering):", T)
+    binary = np.zeros_like(img, dtype=np.uint8)
+    count_above = np.count_nonzero(img > T)
+    count_below = np.count_nonzero(img <= T)
+    if count_above < count_below:
+        binary[img > T] = 255
+    else:
+        binary[img <= T] = 255
 
-binary = np.zeros_like(img, dtype=np.uint8)
-count_above = np.count_nonzero(img > T)
-count_below = np.count_nonzero(img <= T)
-if count_above < count_below:
-    binary[img > T] = 255
-else:
-    binary[img <= T] = 255
-se = np.ones((3, 3), dtype=np.uint8)
-closed = close(binary, se)
+    se = np.ones((3, 3), dtype=np.uint8)
+    closed = close(binary, se)
 
-labels, areas = connected_components(closed)
-if areas:
-    largest_label = max(areas, key=areas.get)
-    print(f"Largest component: label {largest_label}, area {areas[largest_label]}")
+    labels, areas = connected_components(closed)
+    if areas:
+        largest_label = max(areas, key=areas.get)
+        largest_mask = np.zeros_like(closed, dtype=np.uint8)
+        largest_mask[labels == largest_label] = 255
+    else:
+        largest_mask = np.zeros_like(closed, dtype=np.uint8)
 
-    largest_mask = np.zeros_like(closed, dtype=np.uint8)
-    largest_mask[labels == largest_label] = 255
-else:
-    largest_mask = np.zeros_like(closed, dtype=np.uint8)
-    print("No components found")
+    props = compute_region_properties(largest_mask)
+    annotated = img_color.copy()
 
-print("Number of components:", len(areas))
-print("White pixels in closed:", int(np.count_nonzero(closed == 255)))
-print("White pixels in largest_mask:", int(np.count_nonzero(largest_mask == 255)))
+    if props["area"] > 0:
+        min_x, min_y, max_x, max_y = props["bbox"]
+        cv.rectangle(annotated, (min_x, min_y), (max_x, max_y), (0, 255, 0), 2)
 
-props = compute_region_properties(largest_mask)
-print("Region properties:", props)
+        cx, cy = props["centroid"]
+        cv.circle(annotated, (int(cx), int(cy)), 5, (255, 0, 0), -1)
 
-annotated = img_color.copy()
-min_x, min_y, max_x, max_y = props["bbox"]
-cv.rectangle(annotated, (min_x, min_y), (max_x, max_y), (0, 255, 0), 2)
+        text_area = f"Area: {props['area']}"
+        text_perim = f"Perimeter: {props['perimeter']}"
+        cv.putText(annotated, text_area, (10, 30), cv.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+        cv.putText(annotated, text_perim, (10, 60), cv.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
 
-cx, cy = props["centroid"]
-cv.circle(annotated, (int(cx), int(cy)), 5, (255, 0, 0), -1)
+        thickness, std_r, band_background_ratio, result_label = classify_oring(largest_mask, props)
+    else:
+        result_label = "FAIL"
+        cv.putText(annotated, "NO RING FOUND", (10, 30), cv.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 255), 2)
 
-text_area = f"Area: {props['area']}"
-text_perim = f"Perimeter: {props['perimeter']}"
-cv.putText(annotated, text_area, (10, 30), cv.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-cv.putText(annotated, text_perim, (10, 60), cv.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+    t1 = time.perf_counter()
+    time_ms = (t1 - t0) * 1000.0
 
-thickness, std_r, band_background_ratio, result_label = classify_oring(largest_mask, props)
-print("thickness:", thickness)
-print("std_r:", std_r)
-print("band_background_ratio:", band_background_ratio)
-print("Result:", result_label)
+    cv.putText(
+        annotated, result_label, (10, annotated.shape[0] - 20),
+        cv.FONT_HERSHEY_SIMPLEX, 1.5, (0, 255, 0) if result_label == "PASS" else (0, 0, 255), 3,
+    )
+    cv.putText(
+        annotated, f"Time: {time_ms:.1f} ms", (10, annotated.shape[0] - 50),
+        cv.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2,
+    )
 
-cv.putText(
-    annotated, result_label, (10, annotated.shape[0] - 20),
-    cv.FONT_HERSHEY_SIMPLEX, 1.5, (0, 255, 0) if result_label == "PASS" else (0, 0, 255), 3,
-)
+    return annotated, largest_mask, result_label, time_ms
 
-x = 100
-y = 100
-if 0 <= x < img.shape[0] and 0 <= y < img.shape[1]:
-    pix = img[x, y]
-    print("The pixel value at image location [" + str(x) + "," + str(y) + "] is:" + str(pix))
 
-cv.imshow("Annotated O-ring", annotated)
-cv.waitKey(0)
-cv.destroyAllWindows()
+def main():
+    parser = argparse.ArgumentParser(description="Check O-ring images for defects")
+    parser.add_argument("path", type=str, help="Path to image file or folder")
+    parser.add_argument("--save", action="store_true", help="Save annotated outputs")
+    parser.add_argument("--out", type=str, default="output", help="Output folder (default: output)")
+    args = parser.parse_args()
+
+    input_path = Path(args.path)
+    if not input_path.exists():
+        print(f"Error: Path does not exist: {input_path}")
+        return
+
+    if input_path.is_dir():
+        valid_exts = {".png", ".jpg"}
+        image_paths = sorted([p for p in input_path.iterdir() if p.suffix.lower() in valid_exts])
+        if not image_paths:
+            print(f"No image files found in: {input_path}")
+            return
+    else:
+        image_paths = [input_path]
+
+    if args.save:
+        out_dir = Path(args.out)
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+    for img_path in image_paths:
+        try:
+            annotated, largest_mask, result_label, time_ms = process_image(img_path)
+            print(f"{img_path.name}: {result_label} ({time_ms:.1f} ms)")
+
+            if args.save:
+                stem = img_path.stem
+                cv.imwrite(str(out_dir / f"{stem}_annotated.png"), annotated)
+                cv.imwrite(str(out_dir / f"{stem}_mask.png"), largest_mask)
+
+            cv.imshow("Annotated O-ring", annotated)
+            key = cv.waitKey(0) & 0xFF
+            if key in (ord("q"), 27):
+                break
+        except Exception as e:
+            print(f"Error processing {img_path.name}: {e}")
+            continue
+
+    cv.destroyAllWindows()
+
+
+if __name__ == "__main__":
+    main()
