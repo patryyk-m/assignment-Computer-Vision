@@ -6,8 +6,11 @@ import cv2 as cv
 import numpy as np
 from collections import deque
 
-STD_THRESH = 8.0
-HOLE_RATIO_THRESH = 0.065
+BAND_RATIO_HIGH = 0.05
+STD_R_MID = 6.0
+BAND_RATIO_LOW = 0.003
+STD_R_LOW = 4.9
+BAND_RATIO_MID = 0.005
 BBOX_PAD = 5
 BAND_MARGIN_FRAC = 0.15
 
@@ -145,7 +148,7 @@ def compute_region_properties(mask):
     bbox = (min_x, min_y, max_x, max_y)
     
     centroid = (float(xs.mean()), float(ys.mean()))
-    
+
     h, w = mask.shape
     neighbors = [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)]
     perimeter = 0
@@ -206,7 +209,11 @@ def classify_oring(largest_mask, props):
         band_bg = (mask_crop == 0) & band_mask
         band_background_ratio = float(band_bg.sum()) / band_count
 
-    fail = std_r > STD_THRESH or band_background_ratio > HOLE_RATIO_THRESH
+    fail = (
+        band_background_ratio > BAND_RATIO_HIGH
+        or (std_r > STD_R_MID and band_background_ratio > BAND_RATIO_LOW)
+        or (std_r > STD_R_LOW and band_background_ratio > BAND_RATIO_MID)
+    )
     label = "FAIL" if fail else "PASS"
 
     return thickness, std_r, band_background_ratio, label
@@ -296,7 +303,13 @@ def main():
 
     if input_path.is_dir():
         valid_exts = {".png", ".jpg"}
-        image_paths = sorted([p for p in input_path.iterdir() if p.suffix.lower() in valid_exts])
+        paths = [p for p in input_path.iterdir() if p.suffix.lower() in valid_exts]
+        def order_key(p):
+            s = p.stem
+            if len(s) > 5 and s[5:].isdigit():
+                return int(s[5:])
+            return 0
+        image_paths = sorted(paths, key=order_key)
         if not image_paths:
             print(f"No image files found in: {input_path}")
             return
